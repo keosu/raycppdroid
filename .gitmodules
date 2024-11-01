@@ -1,0 +1,3 @@
+[submodule "get-android-tools"]
+	path = get-android-tools
+	url = https://gist.github.com/885e65688f161a87aeaad90f0a1cc7ce.git
