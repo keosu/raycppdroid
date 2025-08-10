@@ -10,10 +10,10 @@ set_property(TARGET raylib-android PROPERTY CXX_STANDARD 20)
 
 include(FetchContent)
 set(FETCHCONTENT_QUIET OFF)
-FetchContent_Declare(raylib URL "https://github.com/raysan5/raylib/archive/refs/tags/5.0.tar.gz")
+FetchContent_Declare(raylib URL "https://github.com/raysan5/raylib/archive/refs/tags/5.5.tar.gz")
 FetchContent_MakeAvailable(raylib)
 
-file(GLOB_RECURSE raylib-android_src "src/*.cpp")
+file(GLOB_RECURSE raylib-android_src "src/*.c")
 target_sources(raylib-android PRIVATE
   "${raylib-android_src}")
 
