@@ -179,7 +179,7 @@ static void ChangeToScreen(int screen)
         default: break;
     }
 
-    currentScreen = screen;
+    currentScreen = (GameScreen)screen;
 }
 
 // Request transition to next screen

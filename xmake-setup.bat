@@ -30,18 +30,18 @@ if "%JAVA_HOME%"=="" (
     echo [OK] JAVA_HOME: %JAVA_HOME%
 )
 
-if "%ANDROID_SDK_ROOT%"=="" (
-    set "ANDROID_SDK_ROOT=%ANDROID_SDK_DEFAULT%"
-    echo [INFO] ANDROID_SDK_ROOT not set, using default: %ANDROID_SDK_ROOT%
+if "%ANDROID_HOME%"=="" (
+    set "ANDROID_HOME=%ANDROID_SDK_DEFAULT%"
+    echo [INFO] ANDROID_HOME not set, using default: %ANDROID_HOME%
 ) else (
-    echo [OK] ANDROID_SDK_ROOT: %ANDROID_SDK_ROOT%
+    echo [OK] ANDROID_HOME: %ANDROID_HOME%
 )
 
-if "%ANDROID_NDK_ROOT%"=="" (
-    set "ANDROID_NDK_ROOT=%ANDROID_NDK_DEFAULT%"
-    echo [INFO] ANDROID_NDK_ROOT not set, using default: %ANDROID_NDK_ROOT%
+if "%ANDROID_NDK%"=="" (
+    set "ANDROID_NDK=%ANDROID_NDK_DEFAULT%"
+    echo [INFO] ANDROID_NDK not set, using default: %ANDROID_NDK%
 ) else (
-    echo [OK] ANDROID_NDK_ROOT: %ANDROID_NDK_ROOT%
+    echo [OK] ANDROID_NDK: %ANDROID_NDK%
 )
 
 :: 检查目录是否存在
@@ -56,16 +56,16 @@ if not exist "%JAVA_HOME%" (
     echo [OK] Java JDK found
 )
 
-if not exist "%ANDROID_SDK_ROOT%" (
-    echo [ERROR] Android SDK not found at: %ANDROID_SDK_ROOT%
+if not exist "%ANDROID_HOME%" (
+    echo [ERROR] Android SDK not found at: %ANDROID_HOME%
     echo Please install Android SDK or run get-android-tools\get-android-tools.bat
     set "MISSING_TOOLS=1"
 ) else (
     echo [OK] Android SDK found
 )
 
-if not exist "%ANDROID_NDK_ROOT%" (
-    echo [ERROR] Android NDK not found at: %ANDROID_NDK_ROOT%
+if not exist "%ANDROID_NDK%" (
+    echo [ERROR] Android NDK not found at: %ANDROID_NDK%
     echo Please install Android NDK or run get-android-tools\get-android-tools.bat
     set "MISSING_TOOLS=1"
 ) else (
@@ -73,15 +73,15 @@ if not exist "%ANDROID_NDK_ROOT%" (
 )
 
 :: 检查具体的工具
-if exist "%ANDROID_SDK_ROOT%" (
-    if not exist "%ANDROID_SDK_ROOT%\build-tools\36.0.0" (
+if exist "%ANDROID_HOME%" (
+    if not exist "%ANDROID_HOME%\build-tools\36.0.0" (
         echo [WARNING] Android Build Tools 36.0.0 not found
         echo Please install: sdkmanager "build-tools;36.0.0"
     ) else (
         echo [OK] Android Build Tools 36.0.0 found
     )
     
-    if not exist "%ANDROID_SDK_ROOT%\platforms\android-36" (
+    if not exist "%ANDROID_HOME%\platforms\android-36" (
         echo [WARNING] Android Platform 36 not found
         echo Please install: sdkmanager "platforms;android-36"
     ) else (

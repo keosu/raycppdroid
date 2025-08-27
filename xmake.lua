@@ -4,7 +4,7 @@
 -- 设置项目基本信息
 set_project("raylib-android")
 set_version("1.0")
-set_languages("c99", "cxx20")
+set_languages("c99")
 
 -- 设置警告级别
 set_warnings("all")
@@ -13,19 +13,25 @@ set_warnings("all")
 add_rules("mode.debug", "mode.release")
 
 -- 检查并设置 Android 环境变量
-local android_sdk = os.getenv("ANDROID_SDK_ROOT") or "C:\\android-sdk"
-local android_ndk = os.getenv("ANDROID_NDK_ROOT") or "C:\\android-ndk"
+local android_sdk = os.getenv("ANDROID_HOME") or "C:\\android-sdk"
+local android_ndk = os.getenv("ANDROID_NDK") or "C:\\android-ndk"
 local java_home = os.getenv("JAVA_HOME") or "C:\\open-jdk"
 
 -- 验证环境
 if not os.isdir(android_sdk) then
     print("Warning: Android SDK not found at: " .. android_sdk)
+else 
+    print("Android SDK found at: " .. android_sdk)
 end
-if not os.isdir(android_ndk) then
+if not os.isdir(android_sdk) then
     print("Warning: Android NDK not found at: " .. android_ndk)
+else 
+    print("Android NDK found at: " .. android_ndk)
 end
 if not os.isdir(java_home) then
     print("Warning: Java JDK not found at: " .. java_home)
+else 
+    print("Java JDK found at: " .. java_home)
 end
 
 -- 桌面版本需要 raylib 包依赖
@@ -52,6 +58,10 @@ target("raylib-desktop")
     set_kind("binary")
     set_default(true)
     
+    -- 强制使用 C 编译器
+    set_languages("c99")
+    add_cflags("/TC", {force = true})  -- 强制 MSVC 使用 C 模式
+    
     -- 添加源文件
     add_files("src/*.c")
     
@@ -64,8 +74,14 @@ target("raylib-desktop")
     -- 平台特定配置
     if is_plat("windows") then
         add_links("opengl32", "gdi32", "winmm")
-        if is_mode("release") then
-            add_ldflags("/SUBSYSTEM:WINDOWS", "/ENTRY:mainCRTStartup")
+        if is_mode("debug") then
+            add_cflags("/Zi", {force = true})  -- 生成调试信息
+            add_ldflags("/DEBUG", {force = true})  -- 生成 PDB 文件
+            add_ldflags("/SUBSYSTEM:CONSOLE", {force = true})
+        elseif is_mode("release") then
+            add_ldflags("/SUBSYSTEM:CONSOLE", "/ENTRY:mainCRTStartup", {force = true})
+        else
+            add_ldflags("/SUBSYSTEM:CONSOLE", {force = true})
         end
     elseif is_plat("linux") then
         add_links("GL", "m", "pthread", "dl", "rt", "X11")
@@ -86,14 +102,15 @@ target("raylib-desktop")
 -- Android 目标
 target("raylib-android")
     set_kind("shared")
-    set_plat("android")
-    set_targetname("main")
+    set_basename("main")
     
     -- 设置 Android 架构（默认 arm64-v8a）
-    set_arch("arm64-v8a")
-    
-    -- 设置 Android NDK 工具链
-    set_toolchains("ndk")
+    if is_plat("android") then
+        set_arch("arm64-v8a")
+        
+        -- 设置 Android NDK 工具链
+        set_toolchains("ndk")
+    end
     
     -- 添加源文件
     add_files("src/*.c")
@@ -118,7 +135,7 @@ target("raylib-android")
     add_syslinks("m", "log", "android", "EGL", "GLESv2", "OpenSLES", "dl")
     
     -- raylib 静态库路径
-    add_linkdirs("build/raylib/lib/$(arch)")
+    add_linkdirs("build/raylib/lib/arm64-v8a")
     add_links("raylib")
     
     -- 头文件路径
@@ -126,15 +143,25 @@ target("raylib-android")
     add_includedirs("build/raylib/include")
     
     -- 设置输出目录
-    set_targetdir("build/android/lib/$(arch)")
+    set_targetdir("build/android/lib/arm64-v8a")
     
     -- 配置 Android NDK
     before_build(function (target)
-        if not os.getenv("ANDROID_NDK_ROOT") and not os.getenv("ANDROID_NDK") then
+        local ndk_root = os.getenv("ANDROID_NDK_ROOT") or os.getenv("ANDROID_NDK")
+        if not ndk_root then
             if os.isdir(android_ndk) then
                 os.setenv("ANDROID_NDK_ROOT", android_ndk)
+                os.setenv("ANDROID_NDK", android_ndk)
             else
                 raise("Android NDK not found. Please set ANDROID_NDK_ROOT environment variable.")
+            end
+        end
+        
+        local sdk_root = os.getenv("ANDROID_SDK_ROOT") or os.getenv("ANDROID_HOME")
+        if not sdk_root then
+            if os.isdir(android_sdk) then
+                os.setenv("ANDROID_SDK_ROOT", android_sdk)
+                os.setenv("ANDROID_HOME", android_sdk)
             end
         end
     end)
@@ -169,15 +196,17 @@ task("build-raylib")
         -- 设置 Android 环境变量
         os.setenv("ANDROID_NDK_ROOT", android_ndk)
         os.setenv("ANDROID_SDK_ROOT", android_sdk)
+        os.setenv("ANDROID_HOME", android_sdk)  -- 为兼容性保留
         
         -- 构建 raylib for Android
         local old_dir = os.curdir()
         os.cd("raylib/src")
         
         -- 使用 make 构建 Android 版本
+        local arch_upper = string.upper(string.gsub(arch, "-", "_"))
         local make_cmd = string.format(
             "make PLATFORM=PLATFORM_ANDROID ANDROID_ARCH=%s ANDROID_API_VERSION=36",
-            arch
+            arch_upper
         )
         
         local success = os.exec(make_cmd)
@@ -384,15 +413,15 @@ public class NativeLoader extends android.app.NativeActivity {
             os.exec(r_compile_cmd)
         end
         
-        -- 创建 dex 文件
+        -- 创建 dex 文件 (使用 d8 代替过时的 dx)
         print("Creating dex file...")
-        local dx_cmd = string.format(
-            '"%s/build-tools/36.0.0/dx" --dex --output="%s/bin/classes.dex" "%s/obj"',
-            android_sdk, build_dir, build_dir
+        local d8_cmd = string.format(
+            '"%s/build-tools/36.0.0/d8" --output "%s/bin/" "%s/obj/com/%s/%s/*.class" --lib "%s/platforms/android-%d/android.jar"',
+            android_sdk, build_dir, build_dir, android_configs.company_name, android_configs.product_name, android_sdk, android_configs.target_sdk
         )
         
-        local dx_success = os.exec(dx_cmd)
-        if not dx_success then
+        local d8_success = os.exec(d8_cmd)
+        if not d8_success then
             print("Failed to create dex file")
             return false
         end
@@ -496,8 +525,13 @@ task("install-apk")
     on_run(function ()
         local apk_file = "build/" .. android_configs.app_name .. ".apk"
         if os.isfile(apk_file) then
-            os.exec("adb install " .. apk_file)
-            print("APK installed successfully")
+            local adb_cmd = string.format('"%s/platform-tools/adb" install "%s"', android_sdk, apk_file)
+            local success = os.exec(adb_cmd)
+            if success then
+                print("APK installed successfully")
+            else
+                print("Failed to install APK")
+            end
         else
             print("APK file not found: " .. apk_file)
             print("Please build APK first with: xmake build-apk")
@@ -513,8 +547,9 @@ task("logcat")
     
     on_run(function ()
         print("Starting logcat for raylib...")
-        os.exec("adb logcat -c")
-        os.exec("adb logcat raylib:V *:S")
+        local adb_path = string.format('"%s/platform-tools/adb"', android_sdk)
+        os.exec(adb_path .. " logcat -c")
+        os.exec(adb_path .. " logcat raylib:V *:S")
     end)
 
 -- 部署任务（构建、安装、监控日志）
@@ -529,4 +564,57 @@ task("deploy")
         os.exec("xmake build-apk")
         os.exec("xmake install-apk")
         os.exec("xmake logcat")
+    end)
+
+-- 调试信息任务
+task("debug-info")
+    set_menu {
+        usage = "xmake debug-info",
+        description = "Show debug information and environment status"
+    }
+    
+    on_run(function ()
+        print("=== XMake Debug Information ===")
+        print("Platform: " .. os.host())
+        print("Architecture: " .. os.arch())
+        print("XMake version: " .. xmake.version())
+        
+        -- 显示环境变量
+        print("\n=== Environment Variables ===")
+        local vars = {"ANDROID_SDK_ROOT", "ANDROID_HOME", "ANDROID_NDK_ROOT", "ANDROID_NDK", "JAVA_HOME"}
+        for _, var in ipairs(vars) do
+            local value = os.getenv(var)
+            print(var .. " = " .. (value or "<not set>"))
+        end
+        
+        -- 显示路径检查
+        print("\n=== Path Verification ===")
+        local paths = {
+            {"Android SDK", android_sdk},
+            {"Android NDK", android_ndk},
+            {"Java JDK", java_home}
+        }
+        for _, path_info in ipairs(paths) do
+            local name, path = path_info[1], path_info[2]
+            local status = os.isdir(path) and "OK" or "NOT FOUND"
+            print(name .. ": " .. path .. " (" .. status .. ")")
+        end
+        
+        -- 显示当前配置
+        print("\n=== Current Configuration ===")
+        print("Build platform: " .. (get_config("plat") or "default"))
+        print("Build architecture: " .. (get_config("arch") or "default"))
+        print("Build mode: " .. (get_config("mode") or "default"))
+        
+        -- 检查重要文件
+        print("\n=== File Verification ===")
+        local files = {
+            "src/koala_seasons.c",
+            "src/screens.h",
+            "build/raylib/include/raylib.h"
+        }
+        for _, file in ipairs(files) do
+            local status = os.isfile(file) and "EXISTS" or "NOT FOUND"
+            print(file .. ": " .. status)
+        end
     end)
