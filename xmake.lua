@@ -23,7 +23,7 @@ if not os.isdir(android_sdk) then
 else 
     print("Android SDK found at: " .. android_sdk)
 end
-if not os.isdir(android_sdk) then
+if not os.isdir(android_ndk) then
     print("Warning: Android NDK not found at: " .. android_ndk)
 else 
     print("Android NDK found at: " .. android_ndk)
@@ -106,10 +106,15 @@ target("raylib-android")
     
     -- 设置 Android 架构（默认 arm64-v8a）
     if is_plat("android") then
-        set_arch("arm64-v8a")
+        local arch = get_config("arch") or "arm64-v8a"
+        set_arch(arch)
         
         -- 设置 Android NDK 工具链
         set_toolchains("ndk")
+        
+        -- 动态设置输出目录和库路径
+        set_targetdir("build/android/lib/" .. arch)
+        add_linkdirs("build/raylib/lib/" .. arch)
     end
     
     -- 添加源文件
@@ -134,16 +139,10 @@ target("raylib-android")
     -- Android 系统库
     add_syslinks("m", "log", "android", "EGL", "GLESv2", "OpenSLES", "dl")
     
-    -- raylib 静态库路径
-    add_linkdirs("build/raylib/lib/arm64-v8a")
+    -- raylib 静态库和头文件路径
     add_links("raylib")
-    
-    -- 头文件路径
     add_includedirs("src")
     add_includedirs("build/raylib/include")
-    
-    -- 设置输出目录
-    set_targetdir("build/android/lib/arm64-v8a")
     
     -- 配置 Android NDK
     before_build(function (target)
@@ -177,6 +176,8 @@ task("build-raylib")
     }
     
     on_run(function (option)
+        -- 处理 option 可能为 nil 的情况
+        option = option or {}
         local arch = option.arch or "arm64-v8a"
         
         print("Building raylib for Android (" .. arch .. ")...")
@@ -193,38 +194,61 @@ task("build-raylib")
             os.exec("git clone --depth 1 --branch 5.5 https://github.com/raysan5/raylib.git")
         end
         
-        -- 设置 Android 环境变量
+        -- 设置 Android 环境变量和编译器
         os.setenv("ANDROID_NDK_ROOT", android_ndk)
         os.setenv("ANDROID_SDK_ROOT", android_sdk)
         os.setenv("ANDROID_HOME", android_sdk)  -- 为兼容性保留
+        
+        -- 设置 NDK 编译器路径
+        local ndk_toolchain = android_ndk .. "/toolchains/llvm/prebuilt/windows-x86_64/bin"
+        local target_triple = "aarch64-linux-android30"  -- 使用 API 30 而不是 36
+        
+        if arch == "armeabi-v7a" then
+            target_triple = "armv7a-linux-androideabi30"
+        elseif arch == "x86" then
+            target_triple = "i686-linux-android30"
+        elseif arch == "x86_64" then
+            target_triple = "x86_64-linux-android30"
+        end
+        
+        local cc = ndk_toolchain .. "/" .. target_triple .. "-clang.cmd"
+        local ar = ndk_toolchain .. "/llvm-ar.exe"
+        
+        -- 检查编译器是否存在
+        if not os.isfile(cc) then
+            print("Error: NDK compiler not found at: " .. cc)
+            print("Please check your Android NDK installation.")
+            return false
+        end
         
         -- 构建 raylib for Android
         local old_dir = os.curdir()
         os.cd("raylib/src")
         
-        -- 使用 make 构建 Android 版本
+        -- 使用 NDK 编译器构建 raylib for Android
         local arch_upper = string.upper(string.gsub(arch, "-", "_"))
         local make_cmd = string.format(
-            "make PLATFORM=PLATFORM_ANDROID ANDROID_ARCH=%s ANDROID_API_VERSION=36",
-            arch_upper
+            'make PLATFORM=PLATFORM_ANDROID ANDROID_ARCH=%s ANDROID_API_VERSION=30 CC="%s" AR="%s"',
+            arch_upper, cc, ar
         )
         
-        local success = os.exec(make_cmd)
-        if not success then
-            print("Failed to build raylib for Android")
-            os.cd(old_dir)
-            return false
-        end
+        print("Using NDK compiler: " .. cc)
+        print("Make command: " .. make_cmd)
         
-        -- 复制库文件和头文件
-        if os.isfile("libraylib.a") then
-            os.cp("libraylib.a", "../../" .. build_dir .. "/lib/" .. arch .. "/")
-            print("raylib static library copied to " .. build_dir .. "/lib/" .. arch)
-        else
+        os.exec(make_cmd)
+        
+        -- 检查是否生成了静态库（不依赖 make 的返回值）
+        if not os.isfile("libraylib.a") then
             print("Error: libraylib.a not found after build")
             os.cd(old_dir)
             return false
         end
+        
+        print("raylib compilation completed successfully!")
+        
+        -- 复制库文件和头文件
+        os.cp("libraylib.a", "../../" .. build_dir .. "/lib/" .. arch .. "/")
+        print("raylib static library copied to " .. build_dir .. "/lib/" .. arch)
         
         -- 复制头文件
         os.cp("raylib.h", "../../" .. build_dir .. "/include/")
@@ -249,6 +273,8 @@ task("build-apk")
     }
     
     on_run(function (option)
+        -- 处理 option 可能为 nil 的情况
+        option = option or {}
         local arch = option.arch or "arm64-v8a"
         local keystore_pass = option.password or "raylib"
         
@@ -256,18 +282,37 @@ task("build-apk")
         
         -- 确保已构建 raylib
         print("Building raylib for Android...")
-        local build_success = os.exec("xmake build-raylib -a " .. arch)
-        if not build_success then
-            print("Failed to build raylib")
+        os.exec("xmake build-raylib -a " .. arch)
+        
+        -- 检查 raylib 静态库是否存在
+        local raylib_lib = "build/raylib/lib/" .. arch .. "/libraylib.a"
+        if not os.isfile(raylib_lib) then
+            print("Failed to build raylib - library not found at: " .. raylib_lib)
             return false
         end
+        print("raylib library found: " .. raylib_lib)
         
-        -- 构建 native 库
+        -- 构建 native 库（使用 Makefile 替代 xmake Android 配置）
         print("Building native library...")
-        local native_success = os.exec("xmake build raylib-android")
-        if not native_success then
-            print("Failed to build native library")
-            return false
+        local native_lib = "build/android/lib/" .. arch .. "/libmain.so"
+        
+        -- 检查是否已经有 native 库，如果没有就使用 Makefile 构建
+        if not os.isfile(native_lib) then
+            print("Native library not found, building with Makefile...")
+            os.exec("make")
+            
+            -- 检查 APK 是否成功生成（Makefile 会直接构建 APK）
+            local apk_file = "build/raylib-android.apk"
+            if os.isfile(apk_file) then
+                print("APK built successfully by Makefile: " .. apk_file)
+                print("APK build completed!")
+                return true  -- Makefile 已经完成了整个 APK 构建
+            else
+                print("Failed to build APK with Makefile")
+                return false
+            end
+        else
+            print("Native library already exists: " .. native_lib)
         end
         
         -- 创建项目目录结构
