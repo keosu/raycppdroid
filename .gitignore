@@ -37,3 +37,4 @@
 /clang-tidy-fixes.patch
 
 .xmake
+raylib

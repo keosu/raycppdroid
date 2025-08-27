@@ -49,7 +49,7 @@ RAYLIB_PATH            ?= build\_deps\raylib-src
 # Starting in 2019 using ARM64 is mandatory for published apps,
 # Starting on August 2020, minimum required target API is Android 10 (API level 29)
 ANDROID_ARCH           ?= ARM64
-ANDROID_API_VERSION    ?= 36
+ANDROID_API_VERSION    ?= 35
 
 ifeq ($(ANDROID_ARCH),ARM)
 	ANDROID_ARCH_NAME   = armeabi-v7a
@@ -70,7 +70,7 @@ export JAVA_HOME       ?= C:/open-jdk
 ANDROID_HOME           ?= C:/android-sdk
 ANDROID_NDK            ?= C:/android-ndk
 ANDROID_TOOLCHAIN      ?= $(ANDROID_NDK)/toolchains/llvm/prebuilt/windows-x86_64
-ANDROID_BUILD_TOOLS    ?= $(ANDROID_HOME)/build-tools/36.0.0
+ANDROID_BUILD_TOOLS    ?= $(ANDROID_HOME)/build-tools/$(ANDROID_API_VERSION).0.0
 ANDROID_PLATFORM_TOOLS ?= $(ANDROID_HOME)/platform-tools
 
 # Android project configuration variables
@@ -118,7 +118,7 @@ ifeq ($(ANDROID_ARCH),ARM)
 	AR = $(ANDROID_TOOLCHAIN)/bin/arm-linux-androideabi-ar
 endif
 ifeq ($(ANDROID_ARCH),ARM64)
-	CC = $(ANDROID_TOOLCHAIN)/bin/aarch64-linux-android35-clang
+	CC = $(ANDROID_TOOLCHAIN)/bin/aarch64-linux-android$(ANDROID_API_VERSION)-clang
 	AR = $(ANDROID_TOOLCHAIN)/bin/aarch64-linux-android-ar
 endif
 ifeq ($(ANDROID_ARCH),x86)
@@ -346,7 +346,7 @@ generate_apk_keystore:
 config_project_package:
 	$(call print_step,Configuring Project Package and Resources)
 	$(call print_info,Generating R.java from resources)
-	@$(ANDROID_BUILD_TOOLS)/aapt package -f -m -S $(PROJECT_BUILD_PATH)/res -J $(PROJECT_BUILD_PATH)/src -M $(PROJECT_BUILD_PATH)/AndroidManifest.xml -I $(ANDROID_HOME)/platforms/android-$(ANDROID_API_VERSION)/android.jar >nul 2>&1
+	$(ANDROID_BUILD_TOOLS)/aapt package -f -m -S $(PROJECT_BUILD_PATH)/res -J $(PROJECT_BUILD_PATH)/src -M $(PROJECT_BUILD_PATH)/AndroidManifest.xml -I $(ANDROID_HOME)/platforms/android-$(ANDROID_API_VERSION)/android.jar >nul 2>&1
 	$(call print_success,Package configuration completed)
 
 # Compile project code into a shared library: lib/lib$(PROJECT_LIBRARY_NAME).so 
