@@ -35,3 +35,5 @@
 
 # clang-tidy output
 /clang-tidy-fixes.patch
+
+.xmake
