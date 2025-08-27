@@ -23,6 +23,63 @@
 
 SHELL=cmd
 
+# Enhanced output system for clear build process visibility
+# Uses text indicators that work in all terminals, with optional color enhancement
+
+# Text prefixes for universal compatibility
+STEP_PREFIX = [STEP]
+INFO_PREFIX = [INFO]
+WARN_PREFIX = [WARN]
+ERROR_PREFIX = [ERROR]
+SUCCESS_PREFIX = [OK]
+
+# Helper functions for enhanced output
+define print_step
+	@echo.
+	@echo =====================================================
+	@echo $(STEP_PREFIX) $(1)
+	@echo =====================================================
+endef
+
+define print_info
+	@echo $(INFO_PREFIX) $(1)
+endef
+
+define print_warning
+	@echo $(WARN_PREFIX) $(1)
+endef
+
+define print_error
+	@echo $(ERROR_PREFIX) $(1)
+endef
+
+define print_success
+	@echo $(SUCCESS_PREFIX) $(1)
+endef
+
+# Color enhancement function using PowerShell (when available and beneficial)
+define print_colored
+	@powershell -Command "try { Write-Host '$(1)' -ForegroundColor $(2) } catch { Write-Host '$(1)' }" 2>nul || echo $(1)
+endef
+
+# Enhanced step function with optional color
+define print_step_enhanced
+	@echo.
+	@echo =====================================================
+	$(call print_colored,[STEP] $(1),Cyan)
+	@echo =====================================================
+endef
+
+# Enhanced info function with optional color
+define print_info_enhanced
+	$(call print_colored,[INFO] $(1),Blue)
+endef
+
+# Enhanced success function with optional color
+define print_success_enhanced
+	$(call print_colored,[OK] $(1),Green)
+endef
+
 # Define required raylib variables
 PLATFORM               ?= PLATFORM_ANDROID
 RAYLIB_PATH            ?= build\_deps\raylib-src
@@ -149,7 +206,8 @@ OBJS = $(patsubst src/%.c, $(PROJECT_BUILD_PATH)/obj/%.o, $(SRCS))
 
 # Android APK building process... some steps required...
 # NOTE: typing 'make' will invoke the default target entry called 'all',
-all: clear \
+all: build_start \
+	 clear \
 	 create_temp_project_dirs \
 	 copy_project_required_libs \
 	 copy_project_resources \
@@ -162,24 +220,48 @@ all: clear \
 	 compile_project_class_dex \
 	 create_project_apk_package \
 	 zipalign_project_apk_package \
-	 sign_project_apk_package
+	 sign_project_apk_package \
+	 build_complete
+
+# Print build start message
+build_start:
+	$(call print_step_enhanced,Starting Android APK Build Process)
+	$(call print_info_enhanced,Target Architecture: $(ANDROID_ARCH) ($(ANDROID_ARCH_NAME)))
+	$(call print_info_enhanced,Android API Version: $(ANDROID_API_VERSION))
+	$(call print_info_enhanced,Project Name: $(PROJECT_NAME))
+	$(call print_info_enhanced,App Name: $(APP_LABEL_NAME))
+	$(call print_info_enhanced,Library Type: $(RAYLIB_LIBTYPE))
 
 # Clear old files and directories that needs to be removed before building
 clear:
-	if exist $(PROJECT_BUILD_PATH)\bin rmdir /s /q $(PROJECT_BUILD_PATH)\bin
-	echo ${SRCS}
-	echo ${OBJS}
+	$(call print_step_enhanced,Cleaning Previous Build Files)
+	@if exist $(PROJECT_BUILD_PATH)\bin (\
+		$(call print_info_enhanced,Removing old bin directory) & \
+		rmdir /s /q $(PROJECT_BUILD_PATH)\bin \
+	)
+	$(call print_info_enhanced,Source files: ${SRCS})
+	$(call print_info_enhanced,Object files: ${OBJS})
 
 # Create required temp directories for APK building
 create_temp_project_dirs:
-	@echo =================Create dirs if not exist
-	@if not exist $(PROJECT_BUILD_PATH) mkdir $(PROJECT_BUILD_PATH) 
-	@if not exist $(PROJECT_BUILD_PATH)\obj mkdir $(PROJECT_BUILD_PATH)\obj
+	$(call print_step_enhanced,Creating Project Directory Structure)
+	$(call print_info,Build path: $(PROJECT_BUILD_PATH))
+	@if not exist $(PROJECT_BUILD_PATH) (\
+		$(call print_info,Creating main build directory) & \
+		mkdir $(PROJECT_BUILD_PATH) \
+	)
+	@if not exist $(PROJECT_BUILD_PATH)\obj (\
+		$(call print_info,Creating obj directory) & \
+		mkdir $(PROJECT_BUILD_PATH)\obj \
+	)
 	@if not exist $(PROJECT_BUILD_PATH)\src mkdir $(PROJECT_BUILD_PATH)\src
 	@if not exist $(PROJECT_BUILD_PATH)\src\com mkdir $(PROJECT_BUILD_PATH)\src\com
 	@if not exist $(PROJECT_BUILD_PATH)\src\com\$(APP_COMPANY_NAME) mkdir $(PROJECT_BUILD_PATH)\src\com\$(APP_COMPANY_NAME)
 	@if not exist $(PROJECT_BUILD_PATH)\src\com\$(APP_COMPANY_NAME)\$(APP_PRODUCT_NAME) mkdir $(PROJECT_BUILD_PATH)\src\com\$(APP_COMPANY_NAME)\$(APP_PRODUCT_NAME)
-	@if not exist $(PROJECT_BUILD_PATH)\lib mkdir $(PROJECT_BUILD_PATH)\lib
+	@if not exist $(PROJECT_BUILD_PATH)\lib (\
+		$(call print_info,Creating lib directory for $(ANDROID_ARCH_NAME)) & \
+		mkdir $(PROJECT_BUILD_PATH)\lib \
+	)
 	@if not exist $(PROJECT_BUILD_PATH)\lib\$(ANDROID_ARCH_NAME) mkdir $(PROJECT_BUILD_PATH)\lib\$(ANDROID_ARCH_NAME)
 	@if not exist $(PROJECT_BUILD_PATH)\bin mkdir $(PROJECT_BUILD_PATH)\bin
 	@if not exist $(PROJECT_BUILD_PATH)\res mkdir $(PROJECT_BUILD_PATH)\res
@@ -191,6 +273,7 @@ create_temp_project_dirs:
 	@if not exist $(PROJECT_BUILD_PATH)\assets\$(PROJECT_RESOURCES_PATH) mkdir $(PROJECT_BUILD_PATH)\assets\$(PROJECT_RESOURCES_PATH)
 	@if not exist $(PROJECT_BUILD_PATH)\obj\screens mkdir $(PROJECT_BUILD_PATH)\obj\screens
 	$(foreach dir, $(PROJECT_SOURCE_DIRS), $(call create_dir, $(dir)))
+	$(call print_success,Directory structure created successfully)
 
 define create_dir
 	@if not exist $(PROJECT_BUILD_PATH)\obj\$(1) mkdir $(PROJECT_BUILD_PATH)\obj\$(1)
@@ -199,44 +282,67 @@ endef
 # Copy required shared libs for integration into APK
 # NOTE: If using shared libs they are loaded by generated NativeLoader.java
 copy_project_required_libs:
-	@echo ==========Compile and copy raylib
+	$(call print_step,Building and Copying Raylib Library)
+	$(call print_info,Configuring CMake build system)
 	cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+	$(call print_info,Compiling raylib for Android platform)
 	make -C build/_deps/raylib-src/src PLATFORM=PLATFORM_ANDROID
 ifeq ($(RAYLIB_LIBTYPE),SHARED)
+	$(call print_info,Copying shared raylib library (.so))
 	copy /Y $(RAYLIB_LIB_PATH)\libraylib.so $(PROJECT_BUILD_PATH)\lib\$(ANDROID_ARCH_NAME)\libraylib.so 
 endif
 ifeq ($(RAYLIB_LIBTYPE),STATIC)
+	$(call print_info,Copying static raylib library (.a))
 	copy /Y $(RAYLIB_LIB_PATH)\libraylib.a $(PROJECT_BUILD_PATH)\lib\$(ANDROID_ARCH_NAME)\libraylib.a 
 endif
+	$(call print_success,Raylib library copied successfully)
 
 # Copy project required resources: strings.xml, icon.png, assets
 # NOTE: Required strings.xml is generated and game resources are copied to assets folder
 # TODO: Review xcopy usage, it can not be found in some systems!
 copy_project_resources:
+	$(call print_step,Copying Project Resources)
+	$(call print_info,Copying application icons for different resolutions)
 	copy $(APP_ICON_LDPI) $(PROJECT_BUILD_PATH)\res\drawable-ldpi\icon.png /Y
 	copy $(APP_ICON_MDPI) $(PROJECT_BUILD_PATH)\res\drawable-mdpi\icon.png /Y
 	copy $(APP_ICON_HDPI) $(PROJECT_BUILD_PATH)\res\drawable-hdpi\icon.png /Y
+	$(call print_info,Generating strings.xml with app name: $(APP_LABEL_NAME))
 	@echo ^<?xml version="1.0" encoding="utf-8"^?^> > $(PROJECT_BUILD_PATH)/res/values/strings.xml
 	@echo ^<resources^>^<string name="app_name"^>$(APP_LABEL_NAME)^</string^>^</resources^> >> $(PROJECT_BUILD_PATH)/res/values/strings.xml
-	if exist $(PROJECT_RESOURCES_PATH) C:\Windows\System32\xcopy $(PROJECT_RESOURCES_PATH) $(PROJECT_BUILD_PATH)\assets\$(PROJECT_RESOURCES_PATH) /Y /E /F
+	@if exist $(PROJECT_RESOURCES_PATH) (\
+		$(call print_info,Copying game resources from $(PROJECT_RESOURCES_PATH)) & \
+		C:\Windows\System32\xcopy $(PROJECT_RESOURCES_PATH) $(PROJECT_BUILD_PATH)\assets\$(PROJECT_RESOURCES_PATH) /Y /E /F \
+	) else (\
+		$(call print_warning,No resources directory found at $(PROJECT_RESOURCES_PATH)) \
+	)
+	$(call print_success,Resources copied successfully)
 
 # Generate NativeLoader.java to load required shared libraries
 # NOTE: Probably not the bet way to generate this file... but it works.
 generate_loader_script:
+	$(call print_step,Generating NativeLoader.java)
+	$(call print_info,Package: com.$(APP_COMPANY_NAME).$(APP_PRODUCT_NAME))
 	@echo package com.$(APP_COMPANY_NAME).$(APP_PRODUCT_NAME); > $(PROJECT_BUILD_PATH)/src/com/$(APP_COMPANY_NAME)/$(APP_PRODUCT_NAME)/NativeLoader.java
 	@echo. >> $(PROJECT_BUILD_PATH)/src/com/$(APP_COMPANY_NAME)/$(APP_PRODUCT_NAME)/NativeLoader.java
 	@echo public class NativeLoader extends android.app.NativeActivity { >> $(PROJECT_BUILD_PATH)/src/com/$(APP_COMPANY_NAME)/$(APP_PRODUCT_NAME)/NativeLoader.java
 	@echo     static { >> $(PROJECT_BUILD_PATH)/src/com/$(APP_COMPANY_NAME)/$(APP_PRODUCT_NAME)/NativeLoader.java
 ifeq ($(RAYLIB_LIBTYPE),SHARED)
+	$(call print_info,Adding raylib shared library loading)
 	@echo         System.loadLibrary("raylib"); >> $(PROJECT_BUILD_PATH)/src/com/$(APP_COMPANY_NAME)/$(APP_PRODUCT_NAME)/NativeLoader.java
 endif
+	$(call print_info,Adding main library loading: $(PROJECT_LIBRARY_NAME))
 	@echo         System.loadLibrary("$(PROJECT_LIBRARY_NAME)"); >> $(PROJECT_BUILD_PATH)/src/com/$(APP_COMPANY_NAME)/$(APP_PRODUCT_NAME)/NativeLoader.java 
 	@echo     } >> $(PROJECT_BUILD_PATH)/src/com/$(APP_COMPANY_NAME)/$(APP_PRODUCT_NAME)/NativeLoader.java
 	@echo } >> $(PROJECT_BUILD_PATH)/src/com/$(APP_COMPANY_NAME)/$(APP_PRODUCT_NAME)/NativeLoader.java
+	$(call print_success,NativeLoader.java generated successfully)
 	
 # Generate AndroidManifest.xml with all the required options
 # NOTE: Probably not the bet way to generate this file... but it works.
 generate_android_manifest:
+	$(call print_step,Generating AndroidManifest.xml)
+	$(call print_info,App package: com.$(APP_COMPANY_NAME).$(APP_PRODUCT_NAME))
+	$(call print_info,Version: $(APP_VERSION_NAME) ($(APP_VERSION_CODE)))
+	$(call print_info,Screen orientation: $(APP_SCREEN_ORIENTATION))
 	@echo ^<?xml version="1.0" encoding="utf-8"^?^> > $(PROJECT_BUILD_PATH)/AndroidManifest.xml
 	@echo ^<manifest xmlns:android="http://schemas.android.com/apk/res/android" >> $(PROJECT_BUILD_PATH)/AndroidManifest.xml
 	@echo         package="com.$(APP_COMPANY_NAME).$(APP_PRODUCT_NAME)"  >> $(PROJECT_BUILD_PATH)/AndroidManifest.xml
@@ -258,75 +364,205 @@ generate_android_manifest:
 	@echo         ^</activity^> >> $(PROJECT_BUILD_PATH)/AndroidManifest.xml
 	@echo     ^</application^> >> $(PROJECT_BUILD_PATH)/AndroidManifest.xml
 	@echo ^</manifest^> >> $(PROJECT_BUILD_PATH)/AndroidManifest.xml
+	$(call print_success,AndroidManifest.xml generated successfully)
 
 # Generate storekey for APK signing: $(PROJECT_NAME).keystore
 # NOTE: Configure here your Distinguished Names (-dname) if required!
 generate_apk_keystore: 
-	if not exist $(PROJECT_BUILD_PATH)/$(PROJECT_NAME).keystore $(JAVA_HOME)/bin/keytool -genkeypair -validity 10000 -dname "CN=$(APP_COMPANY_NAME),O=Android,C=ES" -keystore $(PROJECT_BUILD_PATH)/$(PROJECT_NAME).keystore -storepass $(APP_KEYSTORE_PASS) -keypass $(APP_KEYSTORE_PASS) -alias $(PROJECT_NAME)Key -keyalg RSA
+	$(call print_step,Generating APK Keystore)
+	$(call print_info,Keystore password: $(APP_KEYSTORE_PASS))
+	@if not exist $(PROJECT_BUILD_PATH)/$(PROJECT_NAME).keystore (\
+		$(call print_info,Creating new keystore for APK signing) & \
+		$(JAVA_HOME)/bin/keytool -genkeypair -validity 10000 -dname "CN=$(APP_COMPANY_NAME),O=Android,C=ES" -keystore $(PROJECT_BUILD_PATH)/$(PROJECT_NAME).keystore -storepass $(APP_KEYSTORE_PASS) -keypass $(APP_KEYSTORE_PASS) -alias $(PROJECT_NAME)Key -keyalg RSA \
+	) else (\
+		$(call print_info,Using existing keystore) \
+	)
+	$(call print_success,Keystore ready for APK signing)
 
 # Config project package and resource using AndroidManifest.xml and res/values/strings.xml
 # NOTE: Generates resources file: src/com/$(APP_COMPANY_NAME)/$(APP_PRODUCT_NAME)/R.java
 config_project_package:
+	$(call print_step,Configuring Project Package and Resources)
+	$(call print_info,Generating R.java from resources)
 	$(ANDROID_BUILD_TOOLS)/aapt package -f -m -S $(PROJECT_BUILD_PATH)/res -J $(PROJECT_BUILD_PATH)/src -M $(PROJECT_BUILD_PATH)/AndroidManifest.xml -I $(ANDROID_HOME)/platforms/android-$(ANDROID_API_VERSION)/android.jar
+	$(call print_success,Package configuration completed)
 
 # Compile project code into a shared library: lib/lib$(PROJECT_LIBRARY_NAME).so 
 compile_project_code: $(OBJS)
+	$(call print_step,Compiling Project Code into Shared Library)
+	$(call print_info,Creating lib$(PROJECT_LIBRARY_NAME).so for $(ANDROID_ARCH_NAME))
 	$(CC) -o $(PROJECT_BUILD_PATH)/lib/$(ANDROID_ARCH_NAME)/lib$(PROJECT_LIBRARY_NAME).so $(OBJS) -shared $(INCLUDE_PATHS) $(LDFLAGS) $(LDLIBS)
+	$(call print_success,Shared library compiled successfully)
 
 # Compile all .c files required into object (.o) files
 # NOTE: Those files will be linked into a shared library
 $(PROJECT_BUILD_PATH)/obj/%.o: src/%.c
+	$(call print_info,Compiling $< -> $@)
 	$(CC) -c $< -o $@ $(INCLUDE_PATHS) $(CFLAGS) --sysroot=$(ANDROID_TOOLCHAIN)/sysroot 
 	
 # Compile project .java code into .class (Java bytecode) 
 compile_project_class:
+	$(call print_step,Compiling Java Code to Bytecode)
+	$(call print_info,Compiling NativeLoader.java and R.java)
 	$(JAVA_HOME)/bin/javac -verbose -source 11 -target 11 -d $(PROJECT_BUILD_PATH)/obj --system $(JAVA_HOME)  --class-path $(PROJECT_BUILD_PATH)/obj --class-path $(ANDROID_HOME)/platforms/android-$(ANDROID_API_VERSION)/android.jar --source-path $(PROJECT_BUILD_PATH)/src $(PROJECT_BUILD_PATH)/src/com/$(APP_COMPANY_NAME)/$(APP_PRODUCT_NAME)/R.java $(PROJECT_BUILD_PATH)/src/com/$(APP_COMPANY_NAME)/$(APP_PRODUCT_NAME)/NativeLoader.java
+	$(call print_success,Java bytecode compilation completed)
 
 # Compile .class files into Dalvik executable bytecode (.dex)
 # NOTE: Since Android 5.0, Dalvik interpreter (JIT) has been replaced by ART (AOT)
 compile_project_class_dex:
+	$(call print_step,Creating Dalvik Executable (DEX))
+	$(call print_info,Converting .class files to .dex format)
 	$(ANDROID_BUILD_TOOLS)/d8 $(PROJECT_BUILD_PATH)/obj/com/$(APP_COMPANY_NAME)/$(APP_PRODUCT_NAME)/*.class --release --output $(PROJECT_BUILD_PATH)/bin --lib $(ANDROID_HOME)/platforms/android-$(ANDROID_API_VERSION)/android.jar
+	$(call print_success,DEX file created successfully)
 
 # Create Android APK package: bin/$(PROJECT_NAME).unaligned.apk
 # NOTE: Requires compiled classes.dex and lib$(PROJECT_LIBRARY_NAME).so
 # NOTE: Use -A resources to define additional directory in which to find raw asset files
 create_project_apk_package:
+	$(call print_step,Creating Android APK Package)
+	$(call print_info,Packaging resources, manifest, and DEX file)
 	$(ANDROID_BUILD_TOOLS)/aapt package -f -M $(PROJECT_BUILD_PATH)/AndroidManifest.xml -S $(PROJECT_BUILD_PATH)/res -A $(PROJECT_BUILD_PATH)/assets -I $(ANDROID_HOME)/platforms/android-$(ANDROID_API_VERSION)/android.jar -F $(PROJECT_BUILD_PATH)/bin/$(PROJECT_NAME).unaligned.apk $(PROJECT_BUILD_PATH)/bin
+	$(call print_info,Adding native libraries to APK)
 	cd $(PROJECT_BUILD_PATH) && $(ANDROID_BUILD_TOOLS)/aapt add bin/$(PROJECT_NAME).unaligned.apk lib/$(ANDROID_ARCH_NAME)/lib$(PROJECT_LIBRARY_NAME).so $(PROJECT_SHARED_LIBS)
+	$(call print_success,Unaligned APK package created)
 
 # Create zip-aligned APK package: bin/$(PROJECT_NAME).aligned.apk 
 zipalign_project_apk_package:
+	$(call print_step,Optimizing APK with ZipAlign)
+	$(call print_info,Aligning APK for better performance)
 	$(ANDROID_BUILD_TOOLS)/zipalign -p -f 4 $(PROJECT_BUILD_PATH)/bin/$(PROJECT_NAME).unaligned.apk $(PROJECT_BUILD_PATH)/bin/$(PROJECT_NAME).aligned.apk
+	$(call print_success,APK aligned successfully)
 
 # Create signed APK package using generated Key: build/$(PROJECT_NAME).apk 
 sign_project_apk_package:
+	$(call print_step,Signing APK Package)
+	$(call print_info,Signing APK with keystore: $(PROJECT_NAME).keystore)
 	$(ANDROID_BUILD_TOOLS)/apksigner sign --ks $(PROJECT_BUILD_PATH)/$(PROJECT_NAME).keystore --ks-pass pass:$(APP_KEYSTORE_PASS) --key-pass pass:$(APP_KEYSTORE_PASS) --out build/$(PROJECT_NAME).apk --ks-key-alias $(PROJECT_NAME)Key $(PROJECT_BUILD_PATH)/bin/$(PROJECT_NAME).aligned.apk
+	$(call print_success,APK signed successfully)
+
+# Print build completion message
+build_complete:
+	$(call print_step_enhanced,Android APK Build Completed Successfully!)
+	@echo.
+	$(call print_success_enhanced,APK file created: build/$(PROJECT_NAME).apk)
+	@echo.
+	@echo Next steps:
+	@echo   make install     - Install APK to connected device
+	@echo   make logcat      - Monitor application logs
+	@echo   make deploy      - Install and monitor logs
+	@echo =====================================================
 
 # Install build/$(PROJECT_NAME).apk to default emulator/device
 # NOTE: Use -e (emulator) or -d (device) parameters if required
 install:
+	$(call print_step,Installing APK to Device)
+	$(call print_info,Installing build/$(PROJECT_NAME).apk)
 	$(ANDROID_PLATFORM_TOOLS)/adb install build/$(PROJECT_NAME).apk
+	$(call print_success,APK installed successfully)
 	
 # Check supported ABI for the device (armeabi-v7a, arm64-v8a, x86, x86_64)
 check_device_abi:
+	$(call print_step,Checking Device Architecture)
 	$(ANDROID_PLATFORM_TOOLS)/adb shell getprop ro.product.cpu.abi
 
 # Monitorize output log coming from device, only raylib tag
 logcat:
+	$(call print_step,Monitoring Application Logs)
+	$(call print_info,Clearing previous logs and monitoring raylib output)
 	$(ANDROID_PLATFORM_TOOLS)/adb logcat -c
 	$(ANDROID_PLATFORM_TOOLS)/adb logcat raylib:V *:S
 	
 # Install and monitorize build/$(PROJECT_NAME).apk to default emulator/device
 deploy:
+	$(call print_step,Deploying APK to Device)
+	$(call print_info,Installing and monitoring application)
 	$(ANDROID_PLATFORM_TOOLS)/adb install build/$(PROJECT_NAME).apk
 	$(ANDROID_PLATFORM_TOOLS)/adb logcat -c
-# 	$(ANDROID_PLATFORM_TOOLS)/adb logcat raylib:V *:S
+	$(call print_info,Starting log monitoring - Press Ctrl+C to stop)
 	$(ANDROID_PLATFORM_TOOLS)/adb logcat raylib:V *:S
 
 #$(ANDROID_PLATFORM_TOOLS)/adb logcat *:W
 
 # Clean everything
 clean:
-	del $(PROJECT_BUILD_PATH)\* /f /s /q
-	rmdir $(PROJECT_BUILD_PATH) /s /q
-	@echo Cleaning done
+	$(call print_step,Cleaning Build Directory)
+	$(call print_info,Removing all build artifacts)
+	@if exist $(PROJECT_BUILD_PATH) (\
+		del $(PROJECT_BUILD_PATH)\* /f /s /q & \
+		rmdir $(PROJECT_BUILD_PATH) /s /q \
+	)
+	@if exist build\$(PROJECT_NAME).apk del build\$(PROJECT_NAME).apk
+	$(call print_success,Cleaning completed successfully)
+
+# Display help information
+help:
+	@echo =====================================================
+	@echo           Raylib Android Makefile Help
+	@echo =====================================================
+	@echo.
+	@echo Build Commands:
+	@echo   make all           - Build complete APK (default)
+	@echo   make clean         - Clean all build files
+	@echo   make help          - Show this help message
+	@echo   make test-colors   - Test color output functionality
+	@echo.
+	@echo Individual Steps:
+	@echo   make clear                     - Clear old build files
+	@echo   make create_temp_project_dirs  - Create directory structure
+	@echo   make copy_project_required_libs - Build and copy raylib
+	@echo   make copy_project_resources    - Copy resources and icons
+	@echo   make generate_loader_script    - Generate NativeLoader.java
+	@echo   make generate_android_manifest - Generate AndroidManifest.xml
+	@echo   make generate_apk_keystore     - Generate signing keystore
+	@echo   make config_project_package    - Configure package resources
+	@echo   make compile_project_code      - Compile C/C++ code
+	@echo   make compile_project_class     - Compile Java classes
+	@echo   make compile_project_class_dex - Create DEX file
+	@echo   make create_project_apk_package - Create APK package
+	@echo   make zipalign_project_apk_package - Optimize APK alignment
+	@echo   make sign_project_apk_package  - Sign APK
+	@echo.
+	@echo Device Commands:
+	@echo   make install       - Install APK to device
+	@echo   make logcat        - Monitor application logs
+	@echo   make deploy        - Install APK and monitor logs
+	@echo   make check_device_abi - Check device architecture
+	@echo.
+	@echo Configuration:
+	@echo   ANDROID_ARCH=$(ANDROID_ARCH) ($(ANDROID_ARCH_NAME))
+	@echo   ANDROID_API_VERSION=$(ANDROID_API_VERSION)
+	@echo   PROJECT_NAME=$(PROJECT_NAME)
+	@echo   APP_LABEL_NAME=$(APP_LABEL_NAME)
+	@echo   RAYLIB_LIBTYPE=$(RAYLIB_LIBTYPE)
+	@echo.
+	@echo Example: make ANDROID_ARCH=ARM64 APP_LABEL_NAME=MyGame
+	@echo =====================================================
+
+# Test color output functionality
+test-colors:
+	@echo =====================================================
+	@echo           Testing Color Output Functionality
+	@echo =====================================================
+	@echo.
+	@echo Testing basic text indicators (work everywhere):
+	$(call print_step,This is a build step)
+	$(call print_info,This is an information message)
+	$(call print_warning,This is a warning message)
+	$(call print_error,This is an error message)
+	$(call print_success,This is a success message)
+	@echo.
+	@echo Testing enhanced color output (PowerShell-based):
+	$(call print_step_enhanced,Enhanced build step)
+	$(call print_info_enhanced,Enhanced information message)
+	$(call print_success_enhanced,Enhanced success message)
+	@echo.
+	@echo Testing PowerShell color directly:
+	$(call print_colored,[TEST] This should be colored if PowerShell is available,Magenta)
+	@echo.
+	@echo =====================================================
+	@echo Color test completed!
+	@echo If you see colors above, the enhanced output is working.
+	@echo If not, text indicators still provide clear guidance.
+	@echo =====================================================
+
+.PHONY: all build_start build_complete clear create_temp_project_dirs copy_project_required_libs copy_project_resources generate_loader_script generate_android_manifest generate_apk_keystore config_project_package compile_project_code compile_project_class compile_project_class_dex create_project_apk_package zipalign_project_apk_package sign_project_apk_package install check_device_abi logcat deploy clean help test-colors
